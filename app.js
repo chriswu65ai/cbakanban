@@ -1,6 +1,7 @@
 const STORAGE_KEY = 'cba-life-kanban-v2';
 const THEME_KEY = 'cba-life-theme';
 const VIEW_KEY = 'cba-life-view';
+const RANGE_DAYS = { '30d': 30, '90d': 90, '1y': 365, '3y': 1095 };
 const TRADINGVIEW_RANGE = {
   '30d': '1M',
   '90d': '3M',
@@ -24,6 +25,7 @@ const defaultState = {
 let state = loadState();
 let editing = null;
 let currentColumn = null;
+let stockSeries = [];
 
 const els = {
   boardTabs: document.getElementById('boardTabs'),
@@ -38,6 +40,8 @@ const els = {
   dueMonth: document.getElementById('dueMonth'),
   dueYear: document.getElementById('dueYear'),
   themeToggle: document.getElementById('themeToggle'),
+  stockPrice: document.getElementById('stockPrice'),
+  stockChange: document.getElementById('stockChange'),
   stockRange: document.getElementById('stockRange'),
   tradingViewWidget: document.getElementById('tradingViewWidget'),
   stockStatus: document.getElementById('stockStatus'),
@@ -343,7 +347,84 @@ function loadViewMode() {
   applyViewMode(mode);
 }
 
-els.stockRange.onchange = () => loadTradingViewWidget();
+els.stockRange.onchange = () => {
+  loadTradingViewWidget();
+  drawStockSummary();
+};
+
+async function fetchCsv(url) {
+  const attempts = [
+    () => fetch(url),
+    () => fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`),
+    () => fetch(`https://r.jina.ai/http://${url.replace('https://', '')}`),
+  ];
+
+  let lastError;
+  for (const attempt of attempts) {
+    try {
+      const res = await attempt();
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.text();
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError || new Error('Failed to fetch stock data');
+}
+
+function parseStooqCsv(text) {
+  return text
+    .trim()
+    .split('\n')
+    .slice(1)
+    .map((line) => line.split(','))
+    .filter((parts) => parts.length >= 5 && parts[4] !== 'N/D')
+    .map((parts) => ({ date: parts[0], close: Number(parts[4]) }))
+    .filter((row) => Number.isFinite(row.close))
+    .reverse();
+}
+
+function seriesForSelectedRange() {
+  const selected = els.stockRange.value || '30d';
+  if (!stockSeries.length) return [];
+  if (selected === 'all') return stockSeries;
+  return stockSeries.slice(-((RANGE_DAYS[selected] || 30) + 1));
+}
+
+function drawStockSummary() {
+  const selected = els.stockRange.value || '30d';
+  const series = seriesForSelectedRange();
+  if (series.length < 2) {
+    if (els.stockPrice) els.stockPrice.textContent = 'A$--';
+    if (els.stockChange) {
+      els.stockChange.textContent = '--';
+      els.stockChange.className = 'muted';
+    }
+    if (els.stockStatus) els.stockStatus.textContent = `Range: ${selected}`;
+    return;
+  }
+
+  const latest = series[series.length - 1].close;
+  const start = series[0].close;
+  const delta = latest - start;
+  const pct = (delta / start) * 100;
+  if (els.stockPrice) els.stockPrice.textContent = `A$${latest.toFixed(2)}`;
+  if (els.stockChange) {
+    els.stockChange.textContent = `${delta >= 0 ? '+' : ''}${delta.toFixed(2)} (${pct.toFixed(2)}%)`;
+    els.stockChange.className = pct >= 0 ? 'stock-up' : 'stock-down';
+  }
+  if (els.stockStatus) els.stockStatus.textContent = `Range: ${selected}`;
+}
+
+async function refreshStockSummary() {
+  try {
+    const csv = await fetchCsv('https://stooq.com/q/d/l/?s=cba.au&i=d');
+    stockSeries = parseStooqCsv(csv);
+  } catch {
+    stockSeries = [];
+  }
+  drawStockSummary();
+}
 
 function loadTradingViewWidget() {
   if (!els.tradingViewWidget) return;
@@ -390,4 +471,8 @@ loadTheme();
 loadViewMode();
 render();
 loadTradingViewWidget();
-setInterval(loadTradingViewWidget, 5 * 60 * 1000);
+refreshStockSummary();
+setInterval(() => {
+  loadTradingViewWidget();
+  refreshStockSummary();
+}, 5 * 60 * 1000);

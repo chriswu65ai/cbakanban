@@ -158,3 +158,10 @@ menu { display:flex; justify-content:flex-end; gap:.5rem; padding:0; margin:.35r
 #tradingViewWidget {
   min-height: 240px;
 }
+
+#stockPrice {
+  font-size: 1.1rem;
+}
+
+.stock-up { color: var(--ok); }
+.stock-down { color: var(--bad); }
