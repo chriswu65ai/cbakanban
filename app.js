@@ -1,7 +1,13 @@
 const STORAGE_KEY = 'cba-life-kanban-v2';
 const THEME_KEY = 'cba-life-theme';
 const VIEW_KEY = 'cba-life-view';
-const PROTECTED_SECTIONS = ['Todo', 'Doing', 'Done'];
+const TRADINGVIEW_RANGE = {
+  '30d': '1M',
+  '90d': '3M',
+  '1y': '12M',
+  '3y': '60M',
+  all: 'ALL',
+};
 
 const defaultState = {
   currentBoardId: 'board-1',
@@ -15,19 +21,16 @@ const defaultState = {
   ],
 };
 
-const RANGE_DAYS = { '30d': 30, '90d': 90, '1y': 365, '3y': 1095 };
-
 let state = loadState();
 let editing = null;
 let currentColumn = null;
-let stockSeries = [];
 
 const els = {
   boardTabs: document.getElementById('boardTabs'),
   columns: document.getElementById('columns'),
   addCardBtn: document.getElementById('addCardBtn'),
-  addSectionBtn: document.getElementById('addSectionBtn'),
-  deleteSectionBtn: document.getElementById('deleteSectionBtn'),
+  addBoardBtn: document.getElementById('addBoardBtn'),
+  deleteBoardBtn: document.getElementById('deleteBoardBtn'),
   deleteCardBtn: document.getElementById('deleteCardBtn'),
   cardDialog: document.getElementById('cardDialog'),
   cardForm: document.getElementById('cardForm'),
@@ -35,10 +38,9 @@ const els = {
   dueMonth: document.getElementById('dueMonth'),
   dueYear: document.getElementById('dueYear'),
   themeToggle: document.getElementById('themeToggle'),
-  stockPrice: document.getElementById('stockPrice'),
-  stockChange: document.getElementById('stockChange'),
   stockRange: document.getElementById('stockRange'),
-  stockSparkline: document.getElementById('stockSparkline'),
+  tradingViewWidget: document.getElementById('tradingViewWidget'),
+  stockStatus: document.getElementById('stockStatus'),
   viewMode: document.getElementById('viewMode'),
   appRoot: document.getElementById('appRoot'),
 };
@@ -136,8 +138,12 @@ function renderCard(card, board) {
     </div>
   `;
 
+  article.onclick = (e) => e.stopPropagation();
+
   article.querySelectorAll('input[type="checkbox"]').forEach((box) => {
-    box.onchange = () => {
+    box.onclick = (e) => e.stopPropagation();
+    box.onchange = (e) => {
+      e.stopPropagation();
       const c = board.cards.find((x) => x.id === box.dataset.card);
       c.checklist[Number(box.dataset.item)].done = box.checked;
       saveState();
@@ -230,33 +236,36 @@ function openDialog(card = null) {
 
 els.addCardBtn.onclick = () => openDialog();
 
-els.addSectionBtn.onclick = () => {
-  const board = getBoard();
-  const name = prompt('New section name (e.g. Stocks, Protein, Dog):');
+els.addBoardBtn.onclick = () => {
+  const current = getBoard();
+  const name = prompt('New board name:');
   if (!name) return;
   const trimmed = name.trim();
   if (!trimmed) return;
-  if (board.columns.includes(trimmed)) return alert('A section with that name already exists.');
-  board.columns.push(trimmed);
-  currentColumn = trimmed;
+
+  const newBoard = {
+    id: crypto.randomUUID(),
+    name: trimmed,
+    columns: [...current.columns],
+    cards: [],
+  };
+  state.boards.push(newBoard);
+  state.currentBoardId = newBoard.id;
+  currentColumn = newBoard.columns[0] || null;
   saveState();
   render();
 };
 
-els.deleteSectionBtn.onclick = () => {
-  const board = getBoard();
-  ensureCurrentColumn(board);
-  const section = currentColumn;
-  if (PROTECTED_SECTIONS.includes(section)) {
-    return alert('Todo, Doing, and Done are fixed sections and cannot be deleted.');
+els.deleteBoardBtn.onclick = () => {
+  if (state.boards.length <= 1) {
+    alert('At least one board is required.');
+    return;
   }
-  if (!confirm(`Are you sure you want to delete current section "${section}"?`)) return;
-  const fallback = board.columns.includes('Todo') ? 'Todo' : board.columns[0];
-  board.cards.forEach((card) => {
-    if (card.column === section) card.column = fallback;
-  });
-  board.columns = board.columns.filter((c) => c !== section);
-  currentColumn = fallback;
+  const current = getBoard();
+  if (!confirm(`Are you sure you want to delete current board "${current.name}"?`)) return;
+  state.boards = state.boards.filter((b) => b.id !== current.id);
+  state.currentBoardId = state.boards[0].id;
+  currentColumn = null;
   saveState();
   render();
 };
@@ -308,7 +317,7 @@ document.getElementById('cancelDialog').onclick = () => {
 els.themeToggle.onclick = () => {
   const dark = document.body.classList.toggle('dark');
   localStorage.setItem(THEME_KEY, dark ? 'dark' : 'light');
-  drawStockForRange();
+  loadTradingViewWidget();
 };
 
 function loadTheme() {
@@ -334,102 +343,40 @@ function loadViewMode() {
   applyViewMode(mode);
 }
 
-els.stockRange.onchange = () => drawStockForRange();
+els.stockRange.onchange = () => loadTradingViewWidget();
 
-async function fetchCsv(url) {
-  const attempts = [
-    () => fetch(url),
-    () => fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`),
-    () => fetch(`https://r.jina.ai/http://${url.replace('https://', '')}`),
-  ];
+function loadTradingViewWidget() {
+  if (!els.tradingViewWidget) return;
+  const selected = els.stockRange.value || '30d';
+  const dateRange = TRADINGVIEW_RANGE[selected] || '1M';
 
-  let lastError;
-  for (const attempt of attempts) {
-    try {
-      const res = await attempt();
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.text();
-    } catch (error) {
-      lastError = error;
-    }
-  }
-  throw lastError || new Error('Failed to fetch stock CSV');
-}
-
-function parseStooqCsv(text) {
-  const rows = text.trim().split('\n').slice(1);
-  return rows
-    .map((line) => line.split(','))
-    .filter((parts) => parts.length >= 5 && parts[4] !== 'N/D')
-    .map((parts) => ({ date: parts[0], close: Number(parts[4]) }))
-    .filter((row) => Number.isFinite(row.close))
-    .reverse();
-}
-
-function getSeriesForRange(range) {
-  if (!stockSeries.length) return [];
-  if (range === 'all') return stockSeries;
-  const count = RANGE_DAYS[range] || 30;
-  return stockSeries.slice(-count);
-}
-
-function drawSparkline(values) {
-  const canvas = els.stockSparkline;
-  const ctx = canvas.getContext('2d');
-  const width = canvas.width;
-  const height = canvas.height;
-  ctx.clearRect(0, 0, width, height);
-  if (values.length < 2) return;
-
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min || 1;
-  const color = getComputedStyle(document.body).getPropertyValue('--cba-yellow').trim() || '#ffcc00';
-
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-
-  values.forEach((value, index) => {
-    const x = (index / (values.length - 1)) * (width - 10) + 5;
-    const y = height - ((value - min) / range) * (height - 12) - 6;
-    if (index === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
+  els.tradingViewWidget.innerHTML = '';
+  const script = document.createElement('script');
+  script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-mini-symbol-overview.js';
+  script.async = true;
+  script.textContent = JSON.stringify({
+    symbol: 'ASX:CBA',
+    width: '100%',
+    height: 240,
+    locale: 'en',
+    dateRange,
+    colorTheme: document.body.classList.contains('dark') ? 'dark' : 'light',
+    trendLineColor: '#ffcc00',
+    underLineColor: 'rgba(255, 204, 0, 0.2)',
+    underLineBottomColor: 'rgba(255, 204, 0, 0.05)',
+    isTransparent: true,
+    autosize: true,
+    chartOnly: false,
   });
+  script.onerror = () => {
+    if (els.stockStatus) {
+      els.stockStatus.textContent = 'TradingView data failed to load. Please refresh.';
+    }
+  };
 
-  ctx.stroke();
-}
-
-function drawStockForRange() {
-  const range = els.stockRange.value;
-  const series = getSeriesForRange(range);
-  if (series.length < 2) {
-    els.stockPrice.textContent = 'A$--';
-    els.stockChange.textContent = 'Unavailable';
-    els.stockChange.className = 'muted';
-    drawSparkline([]);
-    return;
-  }
-
-  const latest = series[series.length - 1].close;
-  const start = series[0].close;
-  const delta = latest - start;
-  const pct = (delta / start) * 100;
-
-  els.stockPrice.textContent = `A$${latest.toFixed(2)}`;
-  els.stockChange.textContent = `${delta >= 0 ? '+' : ''}${delta.toFixed(2)} (${pct.toFixed(2)}%) · ${range}`;
-  els.stockChange.className = pct >= 0 ? 'stock-up' : 'stock-down';
-  drawSparkline(series.map((x) => x.close));
-}
-
-async function refreshStock() {
-  try {
-    const csv = await fetchCsv('https://stooq.com/q/d/l/?s=cba.au&i=d');
-    stockSeries = parseStooqCsv(csv);
-    drawStockForRange();
-  } catch {
-    stockSeries = [];
-    drawStockForRange();
+  els.tradingViewWidget.appendChild(script);
+  if (els.stockStatus) {
+    els.stockStatus.textContent = `Range: ${selected}`;
   }
 }
 
@@ -442,5 +389,5 @@ populateDueDateSelects();
 loadTheme();
 loadViewMode();
 render();
-refreshStock();
-setInterval(refreshStock, 5 * 60 * 1000);
+loadTradingViewWidget();
+setInterval(loadTradingViewWidget, 5 * 60 * 1000);

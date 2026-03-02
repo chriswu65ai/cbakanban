@@ -126,24 +126,6 @@ menu { display:flex; justify-content:flex-end; gap:.5rem; padding:0; margin:.35r
   margin-bottom: .45rem;
 }
 
-#stockPrice {
-  font-size: 1.25rem;
-}
-
-#stockRange {
-  width: auto;
-  margin-left: auto;
-}
-
-.stock-up { color: var(--ok); }
-.stock-down { color: var(--bad); }
-
-#stockSparkline {
-  width: 100%;
-  height: 110px;
-  background: var(--surface-2);
-  border-radius: 8px;
-}
 
 .due-date-row {
   display: grid;
@@ -166,4 +148,13 @@ menu { display:flex; justify-content:flex-end; gap:.5rem; padding:0; margin:.35r
 
 .view-select-wrap select {
   margin-top: 0;
+}
+
+#stockRange {
+  width: auto;
+  margin-left: auto;
+}
+
+#tradingViewWidget {
+  min-height: 240px;
 }

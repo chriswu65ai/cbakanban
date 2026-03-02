@@ -21,8 +21,6 @@
 
       <section id="stockWidget" class="stock-card" aria-live="polite">
         <div class="stock-toolbar">
-          <strong id="stockPrice">A$--</strong>
-          <span id="stockChange" class="muted">--</span>
           <select id="stockRange" aria-label="Stock timeframe">
             <option value="30d">30d</option>
             <option value="90d">90d</option>
@@ -31,7 +29,8 @@
             <option value="all">All</option>
           </select>
         </div>
-        <canvas id="stockSparkline" width="800" height="180"></canvas>
+        <div class="tradingview-widget-container" id="tradingViewWidget"></div>
+        <p id="stockStatus" class="muted">Range: 30d</p>
       </section>
 
       <nav id="boardTabs" class="board-tabs"></nav>
@@ -42,8 +41,8 @@
 
       <footer class="bottom-controls">
         <button id="addCardBtn" class="primary-btn">+ Add Card</button>
-        <button id="addSectionBtn" class="primary-btn">+ Add Section</button>
-        <button id="deleteSectionBtn" class="ghost-btn">Delete Current Section</button>
+        <button id="addBoardBtn" class="primary-btn">+ Add Board</button>
+        <button id="deleteBoardBtn" class="ghost-btn">Delete Current Board</button>
         <div class="footer-right-controls">
           <button id="themeToggle" class="primary-btn">Toggle Theme</button>
           <label class="view-select-wrap" aria-label="View mode">
