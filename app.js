@@ -26,6 +26,9 @@ let state = loadState();
 let editing = null;
 let currentColumn = null;
 let stockSeries = [];
+let mobileDragCardId = null;
+let mobileDragPointerId = null;
+let mobileDragTimer = null;
 
 const els = {
   boardTabs: document.getElementById('boardTabs'),
@@ -92,6 +95,7 @@ function renderColumns() {
   board.columns.forEach((column) => {
     const section = document.createElement('section');
     section.className = `column ${column === currentColumn ? 'current-section' : ''}`;
+    section.dataset.column = column;
     section.onclick = () => {
       currentColumn = column;
       renderColumns();
@@ -119,7 +123,64 @@ function renderColumns() {
   });
 }
 
+function clearMobileDropTargets() {
+  document.querySelectorAll('.column.mobile-drop-target').forEach((el) => el.classList.remove('mobile-drop-target'));
+}
+
+function endMobileDrag() {
+  mobileDragCardId = null;
+  mobileDragPointerId = null;
+  if (mobileDragTimer) {
+    clearTimeout(mobileDragTimer);
+    mobileDragTimer = null;
+  }
+  document.body.classList.remove('mobile-drag-mode');
+  document.querySelectorAll('.card.mobile-dragging').forEach((el) => el.classList.remove('mobile-dragging'));
+  clearMobileDropTargets();
+}
+
+function moveCardToColumn(cardId, columnName) {
+  const board = getBoard();
+  const card = board.cards.find((c) => c.id === cardId);
+  if (!card) return;
+  card.column = columnName;
+  currentColumn = columnName;
+  saveState();
+  render();
+}
+
+function handleMobilePointerMove(e) {
+  if (mobileDragPointerId !== e.pointerId || !mobileDragCardId) return;
+  clearMobileDropTargets();
+  const dropCol = document.elementFromPoint(e.clientX, e.clientY)?.closest('.column');
+  if (dropCol) dropCol.classList.add('mobile-drop-target');
+}
+
+function handleMobilePointerUp(e) {
+  if (mobileDragPointerId !== e.pointerId) {
+    if (mobileDragTimer) {
+      clearTimeout(mobileDragTimer);
+      mobileDragTimer = null;
+    }
+    return;
+  }
+
+  if (mobileDragTimer) {
+    clearTimeout(mobileDragTimer);
+    mobileDragTimer = null;
+  }
+
+  if (mobileDragCardId) {
+    const dropCol = document.elementFromPoint(e.clientX, e.clientY)?.closest('.column');
+    if (dropCol?.dataset?.column) {
+      moveCardToColumn(mobileDragCardId, dropCol.dataset.column);
+    }
+  }
+  endMobileDrag();
+}
+
 function renderCard(card, board) {
+
   const article = document.createElement('article');
   article.className = 'card';
   article.draggable = true;
@@ -143,6 +204,19 @@ function renderCard(card, board) {
   `;
 
   article.onclick = (e) => e.stopPropagation();
+
+  article.onpointerdown = (e) => {
+    if (e.pointerType !== 'touch') return;
+    if (e.target.closest('button, input, textarea, select, label')) return;
+
+    mobileDragPointerId = e.pointerId;
+    mobileDragTimer = setTimeout(() => {
+      mobileDragCardId = card.id;
+      article.classList.add('mobile-dragging');
+      document.body.classList.add('mobile-drag-mode');
+      if (navigator.vibrate) navigator.vibrate(10);
+    }, 320);
+  };
 
   article.querySelectorAll('input[type="checkbox"]').forEach((box) => {
     box.onclick = (e) => e.stopPropagation();
@@ -465,6 +539,10 @@ function render() {
   renderTabs();
   renderColumns();
 }
+
+window.addEventListener('pointermove', handleMobilePointerMove, { passive: true });
+window.addEventListener('pointerup', handleMobilePointerUp);
+window.addEventListener('pointercancel', handleMobilePointerUp);
 
 populateDueDateSelects();
 loadTheme();
