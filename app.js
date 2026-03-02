@@ -16,16 +16,17 @@ const defaultState = {
 
 let state = loadState();
 let editing = null;
+let currentColumn = null;
 
 const els = {
   boardTabs: document.getElementById('boardTabs'),
   columns: document.getElementById('columns'),
   addCardBtn: document.getElementById('addCardBtn'),
+  addColumnBtn: document.getElementById('addColumnBtn'),
+  deleteColumnBtn: document.getElementById('deleteColumnBtn'),
   cardDialog: document.getElementById('cardDialog'),
   cardForm: document.getElementById('cardForm'),
   themeToggle: document.getElementById('themeToggle'),
-  manageBoardsBtn: document.getElementById('manageBoardsBtn'),
-  manageColumnsBtn: document.getElementById('manageColumnsBtn'),
   stockPrice: document.getElementById('stockPrice'),
   stockChange: document.getElementById('stockChange'),
   stockUpdated: document.getElementById('stockUpdated'),
@@ -47,6 +48,13 @@ function getBoard() {
   return state.boards.find((b) => b.id === state.currentBoardId) || state.boards[0];
 }
 
+function ensureCurrentColumn(board) {
+  if (!board.columns.length) board.columns.push('Todo');
+  if (!currentColumn || !board.columns.includes(currentColumn)) {
+    currentColumn = board.columns[0];
+  }
+}
+
 function renderTabs() {
   const current = getBoard();
   els.boardTabs.innerHTML = '';
@@ -56,6 +64,7 @@ function renderTabs() {
     btn.textContent = b.name;
     btn.onclick = () => {
       state.currentBoardId = b.id;
+      currentColumn = null;
       saveState();
       render();
     };
@@ -65,17 +74,24 @@ function renderTabs() {
 
 function renderColumns() {
   const board = getBoard();
+  ensureCurrentColumn(board);
   els.columns.innerHTML = '';
+
   board.columns.forEach((column) => {
     const section = document.createElement('section');
-    section.className = 'column';
+    section.className = `column ${column === currentColumn ? 'current-section' : ''}`;
     section.dataset.column = column;
+    section.onclick = () => {
+      currentColumn = column;
+      renderColumns();
+    };
     section.ondragover = (e) => e.preventDefault();
     section.ondrop = (e) => {
       const cardId = e.dataTransfer.getData('text/plain');
       const card = board.cards.find((c) => c.id === cardId);
       if (!card) return;
       card.column = column;
+      currentColumn = column;
       saveState();
       render();
     };
@@ -175,9 +191,39 @@ function openDialog(card = null) {
 
 els.addCardBtn.onclick = () => openDialog();
 
+els.addColumnBtn.onclick = () => {
+  const board = getBoard();
+  const name = prompt('New column name:');
+  if (!name) return;
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  if (board.columns.includes(trimmed)) return alert('A column with that name already exists.');
+  board.columns.push(trimmed);
+  currentColumn = trimmed;
+  saveState();
+  render();
+};
+
+els.deleteColumnBtn.onclick = () => {
+  const board = getBoard();
+  ensureCurrentColumn(board);
+  if (board.columns.length <= 1) return alert('At least one section is required.');
+  const section = currentColumn;
+  if (!confirm(`Delete current section "${section}"?`)) return;
+  const fallback = board.columns.find((c) => c !== section) || board.columns[0];
+  board.cards.forEach((card) => {
+    if (card.column === section) card.column = fallback;
+  });
+  board.columns = board.columns.filter((c) => c !== section);
+  currentColumn = fallback;
+  saveState();
+  render();
+};
+
 els.cardForm.onsubmit = (e) => {
   e.preventDefault();
   const board = getBoard();
+  ensureCurrentColumn(board);
   const form = new FormData(els.cardForm);
   const payload = {
     id: editing?.id || crypto.randomUUID(),
@@ -187,7 +233,7 @@ els.cardForm.onsubmit = (e) => {
     priority: String(form.get('priority') || 'Medium'),
     recurrence: String(form.get('recurrence') || 'none'),
     checklist: String(form.get('checklist') || '').split('\n').map((s) => s.trim()).filter(Boolean).map((text) => ({ text, done: false })),
-    column: editing?.column || board.columns[0],
+    column: editing?.column || currentColumn,
   };
 
   if (editing) {
@@ -206,76 +252,6 @@ els.cardForm.onsubmit = (e) => {
 document.getElementById('cancelDialog').onclick = () => {
   editing = null;
   els.cardDialog.close();
-};
-
-els.manageBoardsBtn.onclick = () => {
-  const current = getBoard();
-  const action = prompt('Boards: add / rename / remove');
-  if (!action) return;
-
-  if (action.toLowerCase() === 'add') {
-    const name = prompt('New board name:');
-    if (!name) return;
-    const newBoard = { id: crypto.randomUUID(), name: name.trim(), columns: [...current.columns], cards: [] };
-    state.boards.push(newBoard);
-    state.currentBoardId = newBoard.id;
-  }
-
-  if (action.toLowerCase() === 'rename') {
-    const name = prompt(`Rename "${current.name}" to:`);
-    if (!name) return;
-    current.name = name.trim();
-  }
-
-  if (action.toLowerCase() === 'remove') {
-    if (state.boards.length <= 1) return alert('At least one board is required.');
-    state.boards = state.boards.filter((b) => b.id !== current.id);
-    state.currentBoardId = state.boards[0].id;
-  }
-
-  saveState();
-  render();
-};
-
-els.manageColumnsBtn.onclick = () => {
-  const board = getBoard();
-  const action = prompt('Sections: add / rename / remove');
-  if (!action) return;
-
-  if (action.toLowerCase() === 'add') {
-    const name = prompt('New section heading:');
-    if (!name) return;
-    board.columns.push(name.trim());
-  }
-
-  if (action.toLowerCase() === 'rename') {
-    const from = prompt(`Which section to rename? (${board.columns.join(', ')})`);
-    if (!from) return;
-    const idx = board.columns.findIndex((c) => c === from.trim());
-    if (idx === -1) return alert('Section not found.');
-    const to = prompt('Rename to:');
-    if (!to) return;
-    const old = board.columns[idx];
-    board.columns[idx] = to.trim();
-    board.cards.forEach((card) => {
-      if (card.column === old) card.column = to.trim();
-    });
-  }
-
-  if (action.toLowerCase() === 'remove') {
-    if (board.columns.length <= 1) return alert('At least one section is required.');
-    const name = prompt(`Section to remove: (${board.columns.join(', ')})`);
-    if (!name) return;
-    const section = name.trim();
-    const target = board.columns[0] === section ? board.columns[1] : board.columns[0];
-    board.cards.forEach((card) => {
-      if (card.column === section) card.column = target;
-    });
-    board.columns = board.columns.filter((c) => c !== section);
-  }
-
-  saveState();
-  render();
 };
 
 els.themeToggle.onclick = () => {
@@ -307,11 +283,25 @@ function loadViewMode() {
 }
 
 async function fetchYahooJson(url) {
-  const direct = await fetch(url);
-  if (direct.ok) return direct.json();
-  const proxy = await fetch(`https://r.jina.ai/http://${url.replace('https://', '')}`);
-  if (!proxy.ok) throw new Error('Stock fetch failed');
-  return JSON.parse(await proxy.text());
+  const attempts = [
+    () => fetch(url),
+    () => fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`),
+    () => fetch(`https://r.jina.ai/http://${url.replace('https://', '')}`),
+  ];
+
+  let lastError = null;
+  for (const attempt of attempts) {
+    try {
+      const res = await attempt();
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      return JSON.parse(text);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error('Stock fetch failed');
 }
 
 async function refreshStock() {

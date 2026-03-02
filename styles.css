@@ -69,13 +69,30 @@ p { margin: 0; }
 .tab-btn.active { background: var(--cba-black); color: var(--cba-yellow); }
 main { flex: 1; }
 .columns { display:grid; gap:.8rem; grid-template-columns: 1fr; }
-.column { background: var(--surface); border-radius: 12px; padding:.6rem; min-height: 220px; }
+.column { background: var(--surface); border-radius: 12px; padding:.6rem; min-height: 220px; border: 2px solid transparent; }
+.column.current-section { border-color: var(--cba-yellow); }
 .column h3 { margin: .2rem 0 .6rem; }
 .card { background: var(--surface-2); border-radius: 10px; padding:.6rem; margin-bottom:.5rem; border-left: 4px solid var(--cba-yellow); }
 .card h4 { margin:.1rem 0 .35rem; }
 .card .meta { font-size:.78rem; color: var(--muted); }
 .checklist { list-style: none; padding:0; margin:.35rem 0 0; }
-.checklist li { display:flex; gap:.35rem; align-items:center; }
+.checklist li {
+  display: flex;
+  gap: .5rem;
+  align-items: flex-start;
+  width: 100%;
+}
+.checklist li input[type="checkbox"] {
+  width: auto;
+  flex: 0 0 auto;
+  margin: .2rem 0 0;
+}
+.checklist li span {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
 .card-actions { display:flex; justify-content:space-between; margin-top:.5rem; }
 .bottom-controls {
   position: sticky;
