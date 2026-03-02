@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kanban with no AI</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app" id="appRoot">
+      <header class="topbar">
+        <div class="brand">
+          <div class="logo-mark"></div>
+          <div>
+            <h1>Kanban with no AI</h1>
+            <p>Organising for the globe-trotting CBA analyst</p>
+          </div>
+        </div>
+        <div class="controls">
+          <button id="themeToggle" class="ghost-btn">Toggle Theme</button>
+          <button id="addColumnBtn" class="ghost-btn">Add Column</button>
+          <button id="deleteColumnBtn" class="ghost-btn">Delete Current Section</button>
+        </div>
+      </header>
+
+      <section id="stockWidget" class="stock-card" aria-live="polite">
+        <div class="stock-head">
+          <h2>CBA.AX</h2>
+          <span class="badge">AUD</span>
+        </div>
+        <div class="stock-price" id="stockPrice">Loading…</div>
+        <div class="stock-change" id="stockChange">Fetching 30-day change…</div>
+        <canvas id="stockSparkline" width="320" height="90"></canvas>
+        <p id="stockUpdated" class="muted">Waiting for Yahoo Finance data.</p>
+      </section>
+
+      <nav id="boardTabs" class="board-tabs"></nav>
+
+      <main>
+        <section id="columns" class="columns"></section>
+      </main>
+
+      <footer class="bottom-controls">
+        <button id="addCardBtn" class="primary-btn">+ Add Card</button>
+        <label>
+          View
+          <select id="viewMode">
+            <option value="auto">Auto</option>
+            <option value="mobile">Mobile</option>
+            <option value="desktop">Desktop</option>
+          </select>
+        </label>
+      </footer>
+    </div>
+
+    <dialog id="cardDialog">
+      <form id="cardForm" method="dialog">
+        <h3 id="dialogTitle">Add Card</h3>
+        <label>Title <input name="title" required /></label>
+        <label>Notes <textarea name="notes"></textarea></label>
+        <label>Due date <input type="date" name="dueDate" /></label>
+        <label>Priority
+          <select name="priority">
+            <option>Low</option>
+            <option selected>Medium</option>
+            <option>High</option>
+          </select>
+        </label>
+        <label>Recurrence
+          <select name="recurrence">
+            <option value="none">None</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+          </select>
+        </label>
+        <label>Checklist (one item per line)
+          <textarea name="checklist" placeholder="Buy oats\nBuy whey"></textarea>
+        </label>
+        <menu>
+          <button value="cancel" type="reset" id="cancelDialog">Cancel</button>
+          <button value="default" type="submit" class="primary-btn">Save</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <script src="app.js" type="module"></script>
+  </body>
+</html>
