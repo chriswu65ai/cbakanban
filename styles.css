@@ -166,16 +166,3 @@ menu { display:flex; justify-content:flex-end; gap:.5rem; padding:0; margin:.35r
 .stock-up { color: var(--ok); }
 .stock-down { color: var(--bad); }
 
-body.mobile-drag-mode {
-  user-select: none;
-}
-
-.card.mobile-dragging {
-  opacity: 0.65;
-  outline: 2px dashed var(--cba-yellow);
-}
-
-.column.mobile-drop-target {
-  border-color: var(--cba-yellow);
-  box-shadow: inset 0 0 0 2px rgba(255, 204, 0, 0.35);
-}

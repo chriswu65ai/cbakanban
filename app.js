@@ -26,9 +26,9 @@ let state = loadState();
 let editing = null;
 let currentColumn = null;
 let stockSeries = [];
-let mobileDragCardId = null;
-let mobileDragPointerId = null;
-let mobileDragTimer = null;
+let lastTapCardId = null;
+let lastTapAt = 0;
+const DOUBLE_TAP_MS = 320;
 
 const els = {
   boardTabs: document.getElementById('boardTabs'),
@@ -123,63 +123,24 @@ function renderColumns() {
   });
 }
 
-function clearMobileDropTargets() {
-  document.querySelectorAll('.column.mobile-drop-target').forEach((el) => el.classList.remove('mobile-drop-target'));
-}
+function cycleCardColumn(board, card) {
+  const hasTodo = board.columns.includes('Todo');
+  const hasDoing = board.columns.includes('Doing');
+  const hasDone = board.columns.includes('Done');
+  if (!hasTodo || !hasDoing || !hasDone) return;
 
-function endMobileDrag() {
-  mobileDragCardId = null;
-  mobileDragPointerId = null;
-  if (mobileDragTimer) {
-    clearTimeout(mobileDragTimer);
-    mobileDragTimer = null;
-  }
-  document.body.classList.remove('mobile-drag-mode');
-  document.querySelectorAll('.card.mobile-dragging').forEach((el) => el.classList.remove('mobile-dragging'));
-  clearMobileDropTargets();
-}
+  if (card.column === 'Todo') card.column = 'Doing';
+  else if (card.column === 'Doing') card.column = 'Done';
+  else if (card.column === 'Done') card.column = 'Todo';
+  else return;
 
-function moveCardToColumn(cardId, columnName) {
-  const board = getBoard();
-  const card = board.cards.find((c) => c.id === cardId);
-  if (!card) return;
-  card.column = columnName;
-  currentColumn = columnName;
+  currentColumn = card.column;
   saveState();
   render();
 }
 
-function handleMobilePointerMove(e) {
-  if (mobileDragPointerId !== e.pointerId || !mobileDragCardId) return;
-  clearMobileDropTargets();
-  const dropCol = document.elementFromPoint(e.clientX, e.clientY)?.closest('.column');
-  if (dropCol) dropCol.classList.add('mobile-drop-target');
-}
-
-function handleMobilePointerUp(e) {
-  if (mobileDragPointerId !== e.pointerId) {
-    if (mobileDragTimer) {
-      clearTimeout(mobileDragTimer);
-      mobileDragTimer = null;
-    }
-    return;
-  }
-
-  if (mobileDragTimer) {
-    clearTimeout(mobileDragTimer);
-    mobileDragTimer = null;
-  }
-
-  if (mobileDragCardId) {
-    const dropCol = document.elementFromPoint(e.clientX, e.clientY)?.closest('.column');
-    if (dropCol?.dataset?.column) {
-      moveCardToColumn(mobileDragCardId, dropCol.dataset.column);
-    }
-  }
-  endMobileDrag();
-}
-
 function renderCard(card, board) {
+
 
   const article = document.createElement('article');
   article.className = 'card';
@@ -205,17 +166,19 @@ function renderCard(card, board) {
 
   article.onclick = (e) => e.stopPropagation();
 
-  article.onpointerdown = (e) => {
+  article.onpointerup = (e) => {
     if (e.pointerType !== 'touch') return;
     if (e.target.closest('button, input, textarea, select, label')) return;
 
-    mobileDragPointerId = e.pointerId;
-    mobileDragTimer = setTimeout(() => {
-      mobileDragCardId = card.id;
-      article.classList.add('mobile-dragging');
-      document.body.classList.add('mobile-drag-mode');
+    const now = Date.now();
+    const isDoubleTap = lastTapCardId === card.id && now - lastTapAt <= DOUBLE_TAP_MS;
+    lastTapCardId = card.id;
+    lastTapAt = now;
+
+    if (isDoubleTap) {
+      cycleCardColumn(board, card);
       if (navigator.vibrate) navigator.vibrate(10);
-    }, 320);
+    }
   };
 
   article.querySelectorAll('input[type="checkbox"]').forEach((box) => {
@@ -540,9 +503,6 @@ function render() {
   renderColumns();
 }
 
-window.addEventListener('pointermove', handleMobilePointerMove, { passive: true });
-window.addEventListener('pointerup', handleMobilePointerUp);
-window.addEventListener('pointercancel', handleMobilePointerUp);
 
 populateDueDateSelects();
 loadTheme();

@@ -21,8 +21,7 @@
 
       <section id="stockWidget" class="stock-card" aria-live="polite">
         <div class="stock-toolbar">
-          <strong id="stockPrice"></strong>
-          <span id="stockChange" class="muted">--</span>
+          <span id="stockChange" class="muted"></span>
           <select id="stockRange" aria-label="Stock timeframe">
             <option value="30d">30d</option>
             <option value="90d">90d</option>
@@ -42,9 +41,9 @@
       </main>
 
       <footer class="bottom-controls">
-        <button id="addCardBtn" class="primary-btn">+ Add Card</button>
-        <button id="addBoardBtn" class="primary-btn">+ Add Board</button>
-        <button id="deleteBoardBtn" class="ghost-btn">Delete Current Board</button>
+        <button id="addCardBtn" class="primary-btn">+ Card</button>
+        <button id="addBoardBtn" class="primary-btn">+ Board</button>
+        <button id="deleteBoardBtn" class="ghost-btn">- Current Board</button>
         <div class="footer-right-controls">
           <button id="themeToggle" class="primary-btn">Toggle Theme</button>
           <label class="view-select-wrap" aria-label="View mode">
