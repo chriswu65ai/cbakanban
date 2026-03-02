@@ -1,6 +1,7 @@
 const STORAGE_KEY = 'cba-life-kanban-v2';
 const THEME_KEY = 'cba-life-theme';
 const VIEW_KEY = 'cba-life-view';
+const PROTECTED_SECTIONS = ['Todo', 'Doing', 'Done'];
 
 const defaultState = {
   currentBoardId: 'board-1',
@@ -14,23 +15,30 @@ const defaultState = {
   ],
 };
 
+const RANGE_DAYS = { '30d': 30, '90d': 90, '1y': 365, '3y': 1095 };
+
 let state = loadState();
 let editing = null;
 let currentColumn = null;
+let stockSeries = [];
 
 const els = {
   boardTabs: document.getElementById('boardTabs'),
   columns: document.getElementById('columns'),
   addCardBtn: document.getElementById('addCardBtn'),
-  addColumnBtn: document.getElementById('addColumnBtn'),
-  deleteColumnBtn: document.getElementById('deleteColumnBtn'),
+  addSectionBtn: document.getElementById('addSectionBtn'),
+  deleteSectionBtn: document.getElementById('deleteSectionBtn'),
+  deleteCardBtn: document.getElementById('deleteCardBtn'),
   cardDialog: document.getElementById('cardDialog'),
   cardForm: document.getElementById('cardForm'),
+  dueDay: document.getElementById('dueDay'),
+  dueMonth: document.getElementById('dueMonth'),
+  dueYear: document.getElementById('dueYear'),
   themeToggle: document.getElementById('themeToggle'),
   stockPrice: document.getElementById('stockPrice'),
   stockChange: document.getElementById('stockChange'),
-  stockUpdated: document.getElementById('stockUpdated'),
-  spark: document.getElementById('stockSparkline'),
+  stockRange: document.getElementById('stockRange'),
+  stockSparkline: document.getElementById('stockSparkline'),
   viewMode: document.getElementById('viewMode'),
   appRoot: document.getElementById('appRoot'),
 };
@@ -50,9 +58,7 @@ function getBoard() {
 
 function ensureCurrentColumn(board) {
   if (!board.columns.length) board.columns.push('Todo');
-  if (!currentColumn || !board.columns.includes(currentColumn)) {
-    currentColumn = board.columns[0];
-  }
+  if (!currentColumn || !board.columns.includes(currentColumn)) currentColumn = board.columns[0];
 }
 
 function renderTabs() {
@@ -80,7 +86,6 @@ function renderColumns() {
   board.columns.forEach((column) => {
     const section = document.createElement('section');
     section.className = `column ${column === currentColumn ? 'current-section' : ''}`;
-    section.dataset.column = column;
     section.onclick = () => {
       currentColumn = column;
       renderColumns();
@@ -146,21 +151,20 @@ function renderCard(card, board) {
 }
 
 function markDone(board, cardId) {
-  const doneCol = board.columns[board.columns.length - 1];
-  const todoCol = board.columns[0];
+  const doneCol = board.columns.includes('Done') ? 'Done' : board.columns[board.columns.length - 1];
+  const todoCol = board.columns.includes('Todo') ? 'Todo' : board.columns[0];
   const card = board.cards.find((c) => c.id === cardId);
   if (!card) return;
   card.column = doneCol;
 
   if (card.recurrence !== 'none') {
-    const next = {
+    board.cards.push({
       ...structuredClone(card),
       id: crypto.randomUUID(),
       column: todoCol,
       checklist: card.checklist.map((i) => ({ ...i, done: false })),
       dueDate: nextDate(card.dueDate, card.recurrence),
-    };
-    board.cards.push(next);
+    });
   }
 
   saveState();
@@ -175,13 +179,48 @@ function nextDate(currentDate, recurrence) {
   return d.toISOString().slice(0, 10);
 }
 
+function populateDueDateSelects() {
+  els.dueDay.innerHTML = '<option value="">Day</option>';
+  for (let i = 1; i <= 31; i += 1) els.dueDay.innerHTML += `<option value="${String(i).padStart(2, '0')}">${i}</option>`;
+
+  els.dueMonth.innerHTML = '<option value="">Month</option>';
+  for (let i = 1; i <= 12; i += 1) els.dueMonth.innerHTML += `<option value="${String(i).padStart(2, '0')}">${i}</option>`;
+
+  const year = new Date().getFullYear();
+  els.dueYear.innerHTML = '<option value="">Year</option>';
+  for (let y = year - 1; y <= year + 8; y += 1) els.dueYear.innerHTML += `<option value="${y}">${y}</option>`;
+}
+
+function setDueDateDropdown(dateStr) {
+  if (!dateStr) {
+    els.dueYear.value = '';
+    els.dueMonth.value = '';
+    els.dueDay.value = '';
+    return;
+  }
+  const [year, month, day] = dateStr.split('-');
+  els.dueYear.value = year || '';
+  els.dueMonth.value = month || '';
+  els.dueDay.value = day || '';
+}
+
+function getDueDateFromDropdown() {
+  const year = els.dueYear.value;
+  const month = els.dueMonth.value;
+  const day = els.dueDay.value;
+  if (!year || !month || !day) return '';
+  return `${year}-${month}-${day}`;
+}
+
 function openDialog(card = null) {
   editing = card;
   els.cardForm.reset();
+  setDueDateDropdown('');
+  els.deleteCardBtn.classList.toggle('hidden', !card);
   if (card) {
     els.cardForm.title.value = card.title;
     els.cardForm.notes.value = card.notes;
-    els.cardForm.dueDate.value = card.dueDate;
+    setDueDateDropdown(card.dueDate);
     els.cardForm.priority.value = card.priority;
     els.cardForm.recurrence.value = card.recurrence;
     els.cardForm.checklist.value = card.checklist.map((c) => c.text).join('\n');
@@ -191,26 +230,28 @@ function openDialog(card = null) {
 
 els.addCardBtn.onclick = () => openDialog();
 
-els.addColumnBtn.onclick = () => {
+els.addSectionBtn.onclick = () => {
   const board = getBoard();
-  const name = prompt('New column name:');
+  const name = prompt('New section name (e.g. Stocks, Protein, Dog):');
   if (!name) return;
   const trimmed = name.trim();
   if (!trimmed) return;
-  if (board.columns.includes(trimmed)) return alert('A column with that name already exists.');
+  if (board.columns.includes(trimmed)) return alert('A section with that name already exists.');
   board.columns.push(trimmed);
   currentColumn = trimmed;
   saveState();
   render();
 };
 
-els.deleteColumnBtn.onclick = () => {
+els.deleteSectionBtn.onclick = () => {
   const board = getBoard();
   ensureCurrentColumn(board);
-  if (board.columns.length <= 1) return alert('At least one section is required.');
   const section = currentColumn;
-  if (!confirm(`Delete current section "${section}"?`)) return;
-  const fallback = board.columns.find((c) => c !== section) || board.columns[0];
+  if (PROTECTED_SECTIONS.includes(section)) {
+    return alert('Todo, Doing, and Done are fixed sections and cannot be deleted.');
+  }
+  if (!confirm(`Are you sure you want to delete current section "${section}"?`)) return;
+  const fallback = board.columns.includes('Todo') ? 'Todo' : board.columns[0];
   board.cards.forEach((card) => {
     if (card.column === section) card.column = fallback;
   });
@@ -218,6 +259,16 @@ els.deleteColumnBtn.onclick = () => {
   currentColumn = fallback;
   saveState();
   render();
+};
+
+els.deleteCardBtn.onclick = () => {
+  if (!editing) return;
+  const board = getBoard();
+  board.cards = board.cards.filter((c) => c.id !== editing.id);
+  editing = null;
+  saveState();
+  render();
+  els.cardDialog.close();
 };
 
 els.cardForm.onsubmit = (e) => {
@@ -229,7 +280,7 @@ els.cardForm.onsubmit = (e) => {
     id: editing?.id || crypto.randomUUID(),
     title: String(form.get('title') || ''),
     notes: String(form.get('notes') || ''),
-    dueDate: String(form.get('dueDate') || ''),
+    dueDate: getDueDateFromDropdown(),
     priority: String(form.get('priority') || 'Medium'),
     recurrence: String(form.get('recurrence') || 'none'),
     checklist: String(form.get('checklist') || '').split('\n').map((s) => s.trim()).filter(Boolean).map((text) => ({ text, done: false })),
@@ -257,6 +308,7 @@ document.getElementById('cancelDialog').onclick = () => {
 els.themeToggle.onclick = () => {
   const dark = document.body.classList.toggle('dark');
   localStorage.setItem(THEME_KEY, dark ? 'dark' : 'light');
+  drawStockForRange();
 };
 
 function loadTheme() {
@@ -282,82 +334,103 @@ function loadViewMode() {
   applyViewMode(mode);
 }
 
-async function fetchYahooJson(url) {
+els.stockRange.onchange = () => drawStockForRange();
+
+async function fetchCsv(url) {
   const attempts = [
     () => fetch(url),
     () => fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`),
     () => fetch(`https://r.jina.ai/http://${url.replace('https://', '')}`),
   ];
 
-  let lastError = null;
+  let lastError;
   for (const attempt of attempts) {
     try {
       const res = await attempt();
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const text = await res.text();
-      return JSON.parse(text);
+      return await res.text();
     } catch (error) {
       lastError = error;
     }
   }
+  throw lastError || new Error('Failed to fetch stock CSV');
+}
 
-  throw lastError || new Error('Stock fetch failed');
+function parseStooqCsv(text) {
+  const rows = text.trim().split('\n').slice(1);
+  return rows
+    .map((line) => line.split(','))
+    .filter((parts) => parts.length >= 5 && parts[4] !== 'N/D')
+    .map((parts) => ({ date: parts[0], close: Number(parts[4]) }))
+    .filter((row) => Number.isFinite(row.close))
+    .reverse();
+}
+
+function getSeriesForRange(range) {
+  if (!stockSeries.length) return [];
+  if (range === 'all') return stockSeries;
+  const count = RANGE_DAYS[range] || 30;
+  return stockSeries.slice(-count);
+}
+
+function drawSparkline(values) {
+  const canvas = els.stockSparkline;
+  const ctx = canvas.getContext('2d');
+  const width = canvas.width;
+  const height = canvas.height;
+  ctx.clearRect(0, 0, width, height);
+  if (values.length < 2) return;
+
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const color = getComputedStyle(document.body).getPropertyValue('--cba-yellow').trim() || '#ffcc00';
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+
+  values.forEach((value, index) => {
+    const x = (index / (values.length - 1)) * (width - 10) + 5;
+    const y = height - ((value - min) / range) * (height - 12) - 6;
+    if (index === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+
+  ctx.stroke();
+}
+
+function drawStockForRange() {
+  const range = els.stockRange.value;
+  const series = getSeriesForRange(range);
+  if (series.length < 2) {
+    els.stockPrice.textContent = 'A$--';
+    els.stockChange.textContent = 'Unavailable';
+    els.stockChange.className = 'muted';
+    drawSparkline([]);
+    return;
+  }
+
+  const latest = series[series.length - 1].close;
+  const start = series[0].close;
+  const delta = latest - start;
+  const pct = (delta / start) * 100;
+
+  els.stockPrice.textContent = `A$${latest.toFixed(2)}`;
+  els.stockChange.textContent = `${delta >= 0 ? '+' : ''}${delta.toFixed(2)} (${pct.toFixed(2)}%) · ${range}`;
+  els.stockChange.className = pct >= 0 ? 'stock-up' : 'stock-down';
+  drawSparkline(series.map((x) => x.close));
 }
 
 async function refreshStock() {
   try {
-    const [quoteJson, chartJson] = await Promise.all([
-      fetchYahooJson('https://query1.finance.yahoo.com/v7/finance/quote?symbols=CBA.AX'),
-      fetchYahooJson('https://query1.finance.yahoo.com/v8/finance/chart/CBA.AX?range=1mo&interval=1d'),
-    ]);
-
-    const quote = quoteJson.quoteResponse?.result?.[0];
-    const chart = chartJson.chart?.result?.[0];
-    const closes = chart?.indicators?.quote?.[0]?.close?.filter((v) => typeof v === 'number') || [];
-    if (!quote || closes.length < 2) throw new Error('Missing stock data');
-
-    const latest = quote.regularMarketPrice;
-    const open30 = closes[0];
-    const delta = latest - open30;
-    const pct = (delta / open30) * 100;
-
-    els.stockPrice.textContent = `A$${latest.toFixed(2)}`;
-    els.stockChange.textContent = `${delta >= 0 ? '+' : ''}${delta.toFixed(2)} (${pct.toFixed(2)}%) • 30d`;
-    els.stockChange.className = `stock-change ${delta >= 0 ? 'good' : 'bad'}`;
-    els.stockUpdated.textContent = `Updated ${new Date().toLocaleTimeString()}`;
-    drawSparkline(closes);
+    const csv = await fetchCsv('https://stooq.com/q/d/l/?s=cba.au&i=d');
+    stockSeries = parseStooqCsv(csv);
+    drawStockForRange();
   } catch {
-    els.stockPrice.textContent = 'Unavailable';
-    els.stockChange.textContent = 'Yahoo Finance data could not be loaded right now.';
-    els.stockChange.className = 'stock-change';
-    els.stockUpdated.textContent = 'Widget shown with fallback status; refresh in a moment.';
-    clearSparkline();
+    stockSeries = [];
+    drawStockForRange();
   }
-}
-
-function clearSparkline() {
-  const ctx = els.spark.getContext('2d');
-  ctx.clearRect(0, 0, els.spark.width, els.spark.height);
-}
-
-function drawSparkline(values) {
-  const ctx = els.spark.getContext('2d');
-  const w = els.spark.width;
-  const h = els.spark.height;
-  ctx.clearRect(0, 0, w, h);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min || 1;
-  ctx.strokeStyle = '#ffcc00';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  values.forEach((v, i) => {
-    const x = (i / (values.length - 1)) * (w - 10) + 5;
-    const y = h - ((v - min) / range) * (h - 12) - 6;
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  });
-  ctx.stroke();
 }
 
 function render() {
@@ -365,6 +438,7 @@ function render() {
   renderColumns();
 }
 
+populateDueDateSelects();
 loadTheme();
 loadViewMode();
 render();
